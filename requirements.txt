@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+sentence-transformers
+psycopg2-binary
+python-dotenv
+numpy
+Pillow
+scikit-learn
+scipy
+PyJWT
+python-multipart
