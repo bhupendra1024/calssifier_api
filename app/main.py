@@ -23,19 +23,32 @@ def startup():
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
-def _get_configs(key: str, api_name: str, classifier_config_model: str):
-    api_cfg = db.get_api_config(key, api_name) or {}
+def _get_configs(key: str, request_model: str):
+    # Step 1: key_api_config → get api_config JSON → extract classifier_config_model
+    api_cfg = db.get_api_config(key, request_model)
+    if not api_cfg:
+        raise HTTPException(status_code=404, detail="API config not found for this key and request_model")
 
-    cls_cfg = db.get_classifier_config(key, classifier_config_model)
+    classifier_config_model = api_cfg.get("classifier_config_model")
+    if not classifier_config_model:
+        raise HTTPException(status_code=400, detail="classifier_config_model not found in api_config")
+
+    # Step 2: key_master → get org_name
+    org_name = db.get_key_master(key)
+    if not org_name:
+        raise HTTPException(status_code=404, detail="Key not found or inactive in key_master")
+
+    # Step 3: classifier_config → get llm_type, matching_algo (mode hardcoded as 'EMBED' in db layer)
+    cls_cfg = db.get_classifier_config(org_name, classifier_config_model)
     if not cls_cfg:
-        raise HTTPException(status_code=404, detail="Classifier config model not found")
+        raise HTTPException(status_code=404, detail="Classifier config not found for this org and model")
 
     llm_type = cls_cfg.get("llm_type")
     if not llm_type:
         raise HTTPException(status_code=400, detail="llm_type not configured in classifier_config_json")
 
     matching_algo = cls_cfg.get("matching_algo", "COSINE")
-    return api_cfg, llm_type, matching_algo
+    return api_cfg, org_name, classifier_config_model, llm_type, matching_algo
 
 
 def _apply_output_config(results: list[dict], output_config: dict) -> list[dict]:
@@ -76,19 +89,19 @@ def create_classification_config_details(
     req: CreateClassifierConfigRequest,
     user_id: str = Depends(get_current_user),
 ):
-    api_cfg, llm_type, _ = _get_configs(
-        req.key, "create_classification_config_details", req.classifier_config_model
+    api_cfg, org_name, classifier_config_model, llm_type, _ = _get_configs(
+        req.key, req.request_model
     )
 
     # Validate none of the classifiers already exist
     existing = [
         item.c_name for item in req.classifier_list
-        if db.classifier_detail_exists(req.key, req.classifier_config_model, item.c_name)
+        if db.classifier_detail_exists(org_name, classifier_config_model, item.c_name)
     ]
     if existing:
         raise HTTPException(
             status_code=409,
-            detail=f"Classifiers already exist for model '{req.classifier_config_model}': {existing}",
+            detail=f"Classifiers already exist for model '{classifier_config_model}': {existing}",
         )
 
     texts = [item.c_text for item in req.classifier_list]
@@ -99,8 +112,8 @@ def create_classification_config_details(
     for name, text, vec in zip(names, texts, vectors):
         vec_str = "[" + ",".join(str(v) for v in vec) + "]"
         db.insert_classifier_detail(
-            key=req.key,
-            classifier_config_model=req.classifier_config_model,
+            org_name=org_name,
+            classifier_config_model=classifier_config_model,
             classifier=name,
             text_data=text,
             vector_data=vec_str,
@@ -118,16 +131,16 @@ def update_classifier_config_details(
     req: UpdateClassifierConfigRequest,
     user_id: str = Depends(get_current_user),
 ):
-    api_cfg, llm_type, _ = _get_configs(
-        req.key, "update_classifier_config_details", req.classifier_config_model
+    api_cfg, org_name, classifier_config_model, llm_type, _ = _get_configs(
+        req.key, req.request_model
     )
 
     # Validate all classifiers exist first
     for item in req.updated_classifiers:
-        if not db.classifier_detail_exists(req.key, req.classifier_config_model, item.c_name):
+        if not db.classifier_detail_exists(org_name, classifier_config_model, item.c_name):
             raise HTTPException(
                 status_code=404,
-                detail=f"Classifier '{item.c_name}' not found for model '{req.classifier_config_model}'",
+                detail=f"Classifier '{item.c_name}' not found for model '{classifier_config_model}'",
             )
 
     texts = [item.c_text for item in req.updated_classifiers]
@@ -138,8 +151,8 @@ def update_classifier_config_details(
     for name, text, vec in zip(names, texts, vectors):
         vec_str = "[" + ",".join(str(v) for v in vec) + "]"
         db.update_classifier_detail(
-            key=req.key,
-            classifier_config_model=req.classifier_config_model,
+            org_name=org_name,
+            classifier_config_model=classifier_config_model,
             classifier=name,
             text_data=text,
             vector_data=vec_str,
@@ -157,11 +170,19 @@ def classification_analyzer(
     req: ClassificationAnalyzerRequest,
     user_id: str = Depends(get_current_user),
 ):
-    api_cfg, llm_type, matching_algo = _get_configs(
-        req.key, "classification_analyzer", req.classifier_config_model
-    )
+    # Step 1: key → org_name
+    org_name = db.get_key_master(req.key)
+    if not org_name:
+        raise HTTPException(status_code=404, detail="Key not found or inactive in key_master")
 
-    details = db.get_classifier_details(req.key, req.classifier_config_model)
+    # Step 2: org_name + classifier_config_model → matching_algo
+    cls_cfg = db.get_classifier_config(org_name, req.classifier_config_model)
+    if not cls_cfg:
+        raise HTTPException(status_code=404, detail="Classifier config not found for this org and model")
+    matching_algo = cls_cfg.get("matching_algo", "COSINE")
+
+    # Step 3: org_name + classifier_config_model → classifier_config_details (vectors)
+    details = db.get_classifier_details(org_name, req.classifier_config_model)
     if not details:
         raise HTTPException(status_code=404, detail="No classifier vectors found for this model")
 
@@ -181,9 +202,6 @@ def classification_analyzer(
 
     results = similarity.compute_pairwise(parsed_vectors, names, matching_algo)
 
-    output_config = api_cfg.get("output_config", {})
-    results = _apply_output_config(results, output_config)
-
     return {
         "classifier_config_model": req.classifier_config_model,
         "results": results,
@@ -200,8 +218,8 @@ def image_comparison(
     try:
         print(f"Received {len(req.images)} images for comparison")
 
-        api_cfg, llm_type, matching_algo = _get_configs(
-            req.key, "image_comparison", req.classifier_config_model
+        api_cfg, org_name, classifier_config_model, llm_type, matching_algo = _get_configs(
+            req.key, req.request_model
         )
 
         output_config = api_cfg.get("output_config", {})
@@ -222,7 +240,7 @@ def image_comparison(
             del data
 
         # Fetch classifier vectors
-        details = db.get_classifier_details(req.key, req.classifier_config_model)
+        details = db.get_classifier_details(org_name, classifier_config_model)
         if not details:
             raise HTTPException(status_code=404, detail="No classifier vectors found for this model")
 
@@ -317,7 +335,7 @@ def image_comparison(
 
         print(f"Image comparison completed: {len(results)} results")
         return {
-            "classifier_config_model": req.classifier_config_model,
+            "classifier_config_model": classifier_config_model,
             "results": results,
         }
     except HTTPException:
