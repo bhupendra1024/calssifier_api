@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.12-slim
 
 # Set working directory
 WORKDIR /app
@@ -17,12 +17,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # and the runtime app look in the same place.
 ENV HF_HOME=/app/model_cache
 ENV TORCH_HOME=/app/model_cache
+ENV SENTENCE_TRANSFORMERS_HOME=/app/model_cache
 
 COPY download_models.py .
 RUN python download_models.py
 
 # 4. Copy the application code
 # We do this LAST so that code changes don't trigger a model re-download
+# .dockerignore excludes .venv, .git, __pycache__, .env, model_cache, etc.
 COPY . .
 
 # 5. Environment settings

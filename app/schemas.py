@@ -4,24 +4,24 @@ from pydantic import BaseModel
 # ── Shared ──────────────────────────────────────────────────────────────────
 
 class ClassifierItem(BaseModel):
-    c_name: str
-    c_text: str
+    classifier: str
+    text_data: str
 
 
 # ── API 1: Create ───────────────────────────────────────────────────────────
 
 class CreateClassifierConfigRequest(BaseModel):
-    key: str
+    org_name: str
     classifier_config_model: str
-    classifier_list: list[ClassifierItem]
+    classifiers: list[ClassifierItem]
 
 
 # ── API 2: Update ───────────────────────────────────────────────────────────
 
 class UpdateClassifierConfigRequest(BaseModel):
-    key: str
+    org_name: str
     classifier_config_model: str
-    updated_classifiers: list[ClassifierItem]
+    classifiers: list[ClassifierItem]
 
 
 # ── API 4: Image Comparison ─────────────────────────────────────────────────
@@ -32,7 +32,7 @@ class ImageItem(BaseModel):
 
 
 class ImageComparisonRequest(BaseModel):
-    key: str
+    org_name: str
     classifier_config_model: str
     images: list[ImageItem]
 
@@ -40,7 +40,7 @@ class ImageComparisonRequest(BaseModel):
 # ── API 3: Analyzer ─────────────────────────────────────────────────────────
 
 class ClassificationAnalyzerRequest(BaseModel):
-    key: str
+    org_name: str
     classifier_config_model: str
 
 

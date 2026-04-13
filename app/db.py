@@ -1,4 +1,7 @@
+import datetime
 import json
+from zoneinfo import ZoneInfo
+
 import psycopg2
 from app import config
 
@@ -16,34 +19,9 @@ def get_connection():
     )
 
 
-# ── key_api_config ──────────────────────────────────────────────────────────
-
-def get_api_config(key: str, api_name: str) -> dict | None:
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            f"""
-            SELECT api_config
-            FROM {SCHEMA}.key_api_config
-            WHERE key = %s AND api_name = %s
-              AND LOWER(api_config_status) = 'active'
-            """,
-            (key, api_name),
-        )
-        row = cur.fetchone()
-        cur.close()
-        if not row:
-            return None
-        raw = row[0]
-        return raw if isinstance(raw, dict) else json.loads(raw)
-    finally:
-        conn.close()
-
-
 # ── classifier_config ───────────────────────────────────────────────────────
 
-def get_classifier_config(key: str, classifier_config_model: str) -> dict | None:
+def get_classifier_config(org_name: str, classifier_config_model: str) -> dict | None:
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -51,9 +29,9 @@ def get_classifier_config(key: str, classifier_config_model: str) -> dict | None
             f"""
             SELECT classifier_config_json
             FROM {SCHEMA}.classifier_config
-            WHERE key = %s AND classifier_config_model = %s AND LOWER(status) = 'active'
+            WHERE org_name = %s AND classifier_config_model = %s AND mode = 'EMBED' AND LOWER(status) = 'active'
             """,
-            (key, classifier_config_model),
+            (org_name, classifier_config_model),
         )
         row = cur.fetchone()
         cur.close()
@@ -67,7 +45,7 @@ def get_classifier_config(key: str, classifier_config_model: str) -> dict | None
 
 # ── classifier_config_details ───────────────────────────────────────────────
 
-def get_classifier_details(key: str, classifier_config_model: str) -> list[dict]:
+def get_classifier_details(org_name: str, classifier_config_model: str) -> list[dict]:
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -75,10 +53,10 @@ def get_classifier_details(key: str, classifier_config_model: str) -> list[dict]
             f"""
             SELECT classifier, vector_data
             FROM {SCHEMA}.classifier_config_details
-            WHERE key = %s AND classifier_config_model = %s
+            WHERE org_name = %s AND classifier_config_model = %s
               AND vector_data IS NOT NULL AND LOWER(status) = 'active'
             """,
-            (key, classifier_config_model),
+            (org_name, classifier_config_model),
         )
         rows = cur.fetchall()
         cur.close()
@@ -88,7 +66,7 @@ def get_classifier_details(key: str, classifier_config_model: str) -> list[dict]
 
 
 def classifier_detail_exists(
-    key: str, classifier_config_model: str, classifier: str
+    org_name: str, classifier_config_model: str, classifier: str
 ) -> bool:
     conn = get_connection()
     try:
@@ -96,9 +74,9 @@ def classifier_detail_exists(
         cur.execute(
             f"""
             SELECT 1 FROM {SCHEMA}.classifier_config_details
-            WHERE key = %s AND classifier_config_model = %s AND classifier = %s
+            WHERE org_name = %s AND classifier_config_model = %s AND classifier = %s
             """,
-            (key, classifier_config_model, classifier),
+            (org_name, classifier_config_model, classifier),
         )
         exists = cur.fetchone() is not None
         cur.close()
@@ -108,7 +86,7 @@ def classifier_detail_exists(
 
 
 def insert_classifier_detail(
-    key: str,
+    org_name: str,
     classifier_config_model: str,
     classifier: str,
     text_data: str,
@@ -117,15 +95,16 @@ def insert_classifier_detail(
 ):
     conn = get_connection()
     try:
+        timestamp = datetime.datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S")
         cur = conn.cursor()
         cur.execute(
             f"""
             INSERT INTO {SCHEMA}.classifier_config_details
-                (key, classifier_config_model, classifier, text_data, vector_data,
+                (org_name, classifier_config_model, classifier, text_data, vector_data,
                  created_on, created_by, status)
-            VALUES (%s, %s, %s, %s, %s, DATE_TRUNC('second', NOW()), %s, 'Active')
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'Active')
             """,
-            (key, classifier_config_model, classifier, text_data, vector_data, created_by),
+            (org_name, classifier_config_model, classifier, text_data, vector_data, timestamp, created_by),
         )
         conn.commit()
         cur.close()
@@ -134,7 +113,7 @@ def insert_classifier_detail(
 
 
 def update_classifier_detail(
-    key: str,
+    org_name: str,
     classifier_config_model: str,
     classifier: str,
     text_data: str,
@@ -143,14 +122,15 @@ def update_classifier_detail(
 ):
     conn = get_connection()
     try:
+        timestamp = datetime.datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S")
         cur = conn.cursor()
         cur.execute(
             f"""
             UPDATE {SCHEMA}.classifier_config_details
-            SET text_data = %s, vector_data = %s, modified_on = DATE_TRUNC('second', NOW()), modified_by = %s
-            WHERE key = %s AND classifier_config_model = %s AND classifier = %s
+            SET text_data = %s, vector_data = %s, modified_on = %s, modified_by = %s
+            WHERE org_name = %s AND classifier_config_model = %s AND classifier = %s
             """,
-            (text_data, vector_data, modified_by, key, classifier_config_model, classifier),
+            (text_data, vector_data, timestamp, modified_by, org_name, classifier_config_model, classifier),
         )
         conn.commit()
         cur.close()
