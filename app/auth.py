@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 import jwt
 from fastapi import HTTPException, Security

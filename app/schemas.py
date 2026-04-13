@@ -12,7 +12,7 @@ class ClassifierItem(BaseModel):
 
 class CreateClassifierConfigRequest(BaseModel):
     key: str
-    classifier_config_model: str
+    request_model: str
     classifier_list: list[ClassifierItem]
 
 
@@ -20,7 +20,7 @@ class CreateClassifierConfigRequest(BaseModel):
 
 class UpdateClassifierConfigRequest(BaseModel):
     key: str
-    classifier_config_model: str
+    request_model: str
     updated_classifiers: list[ClassifierItem]
 
 
@@ -33,7 +33,7 @@ class ImageItem(BaseModel):
 
 class ImageComparisonRequest(BaseModel):
     key: str
-    classifier_config_model: str
+    request_model: str
     images: list[ImageItem]
 
 
