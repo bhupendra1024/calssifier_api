@@ -19,50 +19,6 @@ def get_connection():
     )
 
 
-# ── key_api_config ──────────────────────────────────────────────────────────
-
-def get_api_config(key: str, request_model: str) -> dict | None:
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            f"""
-            SELECT api_config
-            FROM {SCHEMA}.key_api_config
-            WHERE key = %s AND request_model = %s
-              AND LOWER(api_config_status) = 'active'
-            """,
-            (key, request_model),
-        )
-        row = cur.fetchone()
-        cur.close()
-        if not row:
-            return None
-        raw = row[0]
-        return raw if isinstance(raw, dict) else json.loads(raw)
-    finally:
-        conn.close()
-
-def get_key_master(key: str) -> str | None:
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            f"""
-            SELECT org_name
-            FROM {SCHEMA}.key_master
-            WHERE key = %s AND LOWER(key_status) = 'active'
-            """,
-            (key,),
-        )
-        row = cur.fetchone()
-        cur.close()
-        if not row:
-            return None
-        return row[0]
-    finally:
-        conn.close()
-
 # ── classifier_config ───────────────────────────────────────────────────────
 
 def get_classifier_config(org_name: str, classifier_config_model: str) -> dict | None:

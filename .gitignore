@@ -1,3 +1,10 @@
 .env
 .venv
 
+_pycache__
+__pycache__
+.claude
+result_output
+CLAUDE.md
+
+specs.md
