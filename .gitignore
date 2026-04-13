@@ -1,3 +1,17 @@
 .env
 .venv
 
+.claude/
+
+__pycache__/
+app/__pycache__/
+*.pyc
+*.pyo
+.env
+.env.*
+model_cache/
+*.md
+download.png
+.dockerignore
+Dockerfile
+
